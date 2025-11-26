@@ -97,7 +97,7 @@ const getDeckComponentBounds = () => {
         return tree?.m_Root?.m_element?.ownerDocument?.defaultView ?? null;
     };
 
-    // Try to be flexible: support old exact IDs and any future variants
+   
     const navWindow = findWindow(
         id => id === "MainNavMenuContainer" || id.includes("MainNav")
     );
@@ -108,11 +108,9 @@ const getDeckComponentBounds = () => {
         id => id.toLowerCase().includes("keyboard")
     );
 
-    // NAV
     const navHidden = navWindow?.document.hidden;
     const navBounds = navHidden ? null : getBounds(navWindow?.document);
 
-    // QAM
     const qamHidden = qamWindow?.document.hidden;
     const qamBounds = qamHidden ? null : getBounds(qamWindow?.document);
 
@@ -133,7 +131,6 @@ const getDeckComponentBounds = () => {
         virtualKeyboard: virtualKeyboardBounds,
     };
 };
-
 
 const useDeckComponentBounds = () => {
     const [state, setState] = useState(getDeckComponentBounds());
