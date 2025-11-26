@@ -24,16 +24,37 @@ const Browser = ({ url, visible, x, y, width, height }: BrowserProps) => {
     useUIComposition(UIComposition.Notification);
 
     const [{ browser, view }] = useState<{ browser: any, view: any }>(() => {
-        const root: WindowRouter & any = Router.WindowStore?.GamepadUIMainWindowInstance;
+        const root: (WindowRouter & any) | undefined =
+            Router.WindowStore?.GamepadUIMainWindowInstance;
+
+        if (!root || typeof root.CreateBrowserView !== "function") {
+            const noOp = () => {};
+            const fakeView = {
+                LoadURL: noOp,
+                Destroy: noOp,
+                GetBrowser: () => ({
+                    SetVisible: noOp,
+                    SetBounds: noOp,
+                }),
+            } as any;
+
+            console.error("[decky-pip] GamepadUIMainWindowInstance/CreateBrowserView not available");
+
+            return {
+                view: fakeView,
+                browser: fakeView.GetBrowser(),
+            };
+        }
+
         const view = root.CreateBrowserView("pip");
         const browser = view.GetBrowser();
 
-        window['pip' as any] = view;
+        (window as any).pip = view;
 
         return {
             view,
-            browser
-        }
+            browser,
+        };
     });
 
     useEffect(() => {
@@ -65,38 +86,54 @@ const getBounds = (document: any) => {
 }
 
 const getDeckComponentBounds = () => {
-    const trees = getGamepadNavigationTrees();
+    const trees = (typeof getGamepadNavigationTrees === "function"
+        ? getGamepadNavigationTrees()
+        : []) as any[];
 
-    const nav = trees.find((tree: any) => tree?.id === 'MainNavMenuContainer')?.m_Root?.m_element?.ownerDocument.defaultView ?? null
-    const navHidden = nav?.document.hidden;
-    const navBounds = navHidden
-        ? null
-        : getBounds(nav?.document);
+    const findWindow = (match: (id: string) => boolean) => {
+        const tree = trees.find(
+            (t: any) => typeof t?.id === "string" && match(t.id)
+        );
+        return tree?.m_Root?.m_element?.ownerDocument?.defaultView ?? null;
+    };
 
-    const qam = trees.find((tree: any) => tree?.id === 'QuickAccess-NA')?.m_Root?.m_element?.ownerDocument.defaultView ?? null
-    const qamHidden = qam?.document.hidden;
-    const qamBounds = qamHidden
-        ? null
-        : getBounds(qam?.document);
+    // Try to be flexible: support old exact IDs and any future variants
+    const navWindow = findWindow(
+        id => id === "MainNavMenuContainer" || id.includes("MainNav")
+    );
+    const qamWindow = findWindow(
+        id => id === "QuickAccess-NA" || id.includes("QuickAccess")
+    );
+    const virtualKeyboardWindow = findWindow(
+        id => id.toLowerCase().includes("keyboard")
+    );
 
-    const virtualKeyboard = trees.find((tree: any) => tree?.id === 'virtual keyboard')?.m_Root?.m_element?.ownerDocument.defaultView ?? null
-    const virtualKeyboardHidden = !virtualKeyboard;
-    // this is a guess, gotta figure out how to inspect to keyboard DOM
+    // NAV
+    const navHidden = navWindow?.document.hidden;
+    const navBounds = navHidden ? null : getBounds(navWindow?.document);
+
+    // QAM
+    const qamHidden = qamWindow?.document.hidden;
+    const qamBounds = qamHidden ? null : getBounds(qamWindow?.document);
+
+    // VIRTUAL KEYBOARD (still a guess, based on its screen area)
+    const virtualKeyboardHidden = !virtualKeyboardWindow;
     const virtualKeyboardBounds = virtualKeyboardHidden
         ? null
         : {
             x: 0,
             y: SCREEN_HEIGHT - 240,
             width: SCREEN_WIDTH,
-            height: 240
+            height: 240,
         };
 
     return {
         nav: navBounds,
         qam: qamBounds,
         virtualKeyboard: virtualKeyboardBounds,
-    }
-}
+    };
+};
+
 
 const useDeckComponentBounds = () => {
     const [state, setState] = useState(getDeckComponentBounds());
@@ -109,7 +146,7 @@ const useDeckComponentBounds = () => {
                     ? current
                     : next;
             });
-        }, 250);
+        }, 500);
 
         return () => clearInterval(interval);
     }, []);
@@ -120,6 +157,9 @@ const useDeckComponentBounds = () => {
 export const Pip = () => {
     const { nav, qam, virtualKeyboard } = useDeckComponentBounds();
     const [{ viewMode, position, size, url, visible, ...settings }] = useGlobalState();
+
+    const overlayOpen = !!nav || !!qam || !!virtualKeyboard;
+    const effectiveVisible = visible && !overlayOpen;
 
     const pictureWidth = PICTURE_WIDTH * size;
     const pictureHeight = PICTURE_HEIGHT * size;
@@ -217,7 +257,7 @@ export const Pip = () => {
 
     return <Browser
         url={url}
-        visible={visible}
+        visible={effectiveVisible}
         {...bounds} />;
 }
 
